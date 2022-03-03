@@ -13,14 +13,20 @@ import (
 	"github.com/tmilewski/goenv"
 )
 
+const (
+	FILE_VERSION = "VERSION"
+	APP_NAME     = "APP_NAME"
+	APP_BU       = "APP_BU"
+)
+
 func Initialize(appName string) (appTitle string, appVersion string, appIsProduction bool) {
 	appIsProduction = os.Getenv(ENV) == "production"
 	if !appIsProduction {
 		goenv.Load()
 	}
-	content, err := ioutil.ReadFile("VERSION")
+	content, err := ioutil.ReadFile(FILE_VERSION)
 	if err != nil {
-		content, _ = ioutil.ReadFile("../VERSION")
+		content, _ = ioutil.ReadFile(fmt.Sprintf("../%s", FILE_VERSION))
 	}
 
 	appVersion = strings.TrimSpace(string(content))
@@ -79,12 +85,12 @@ func PrepareDataStore(pgx *PGClient, ctx *context.Context, appTitle string, appN
 	data := DataStore{}
 	pgx.Connect(ctx, appTitle)
 	stx, err := pgx.Begin()
-	if TraceIsError(err, nil) {
+	if IsRollbackThrow(err, nil) {
 		Fatal("Begin::", err)
 	}
 
 	app, err := stx.QueryOne("SELECT id cf_stock_app_id FROM sync.cf_stock_app WHERE s_name = $1", appName)
-	if TraceIsError(err, nil) {
+	if IsRollbackThrow(err, nil) {
 		Fatal("cf_stock_app::", err)
 	}
 	data.AppID = app["cf_stock_app_id"]
@@ -94,7 +100,7 @@ func PrepareDataStore(pgx *PGClient, ctx *context.Context, appTitle string, appN
 	// 	Fatal("getCourierToken::", err)
 	// }
 	err = stx.Commit()
-	if TraceIsError(err, nil) {
+	if IsRollbackThrow(err, nil) {
 		Fatalf("Commit: %s", err)
 	}
 	return &data
@@ -104,7 +110,7 @@ func (d *DataStore) SetConfigBUAllow(stx *PGTx) error {
 	cfBU := make(map[string]bool)
 	raw, err := stx.Query(`
 		SELECT
-			coalesce(o_global->'apis', 'false') apis,
+			coalesce(o_attr->'apis', 'false') apis,
 			b.id m_bu_id, b.s_code bu_code
 		FROM sync.cf_stock_bu sb
 		INNER JOIN main.m_bu b ON b.id = sb.m_bu_id;

@@ -1,6 +1,7 @@
 package daas
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -21,8 +22,45 @@ const (
 )
 
 type HTTP struct {
-	Code  int
-	Error error
+	Code  int     `json:"code,omitempty"`
+	Error *string `json:"error"`
+}
+
+func (e *HTTP) ErrorHandlerThrow(c *fiber.Ctx) error {
+	err := errors.New(*e.Error)
+	if e.Code != fiber.StatusOK && e.Code != fiber.StatusCreated {
+		Error(err)
+		sentry.CaptureException(err)
+	} else if err != nil {
+		Warn(err)
+	}
+	return c.Status(e.Code).JSON((HTTP{Code: e.Code, Error: e.Error}))
+}
+
+func ErrorHandlerThrow(c *fiber.Ctx, code int, err error) error {
+	errorMessage := err.Error()
+	if code != fiber.StatusOK && code != fiber.StatusCreated {
+		Error(err)
+		sentry.CaptureException(err)
+	} else if err != nil {
+		Warn(err)
+	}
+	return c.Status(code).JSON((HTTP{Code: code, Error: &errorMessage}))
+}
+
+func ErrorHandler(c *fiber.Ctx, code int, err error) error {
+	errorMessage := err.Error()
+	Warn(err)
+	return c.Status(code).JSON((HTTP{Code: code, Error: &errorMessage}))
+}
+
+func ErrorThrow(errMsg string) {
+	Error(errMsg)
+	sentry.CaptureException(errors.New(errMsg))
+}
+func ErrorThrowf(format string, v ...interface{}) {
+	Errorf(format, v...)
+	sentry.CaptureException(fmt.Errorf(format, v...))
 }
 
 type SubSet []string
@@ -88,24 +126,33 @@ func elapsedDuration(start time.Time) (time.Duration, string) {
 	}
 	return duration, elapsed
 }
+func ToSize(size int) string {
 
-func TraceHandlerThrow(c *fiber.Ctx, code int, err error, ignoreCapture ...bool) error {
-	Error(err)
-	if len(ignoreCapture) > 0 {
-		sentry.CaptureException(err)
+	if size%1024 < 0 {
+		return fmt.Sprintf("%db.", size)
+	} else if (size/1024)%1024 < 1024 {
+		return fmt.Sprintf("%.2fkb.", Round(float64(size)/1024, 2))
+	} else if (size/(1024*2))%1024 < 1024 {
+		return fmt.Sprintf("%.2fmb.", Round(float64(size)/(1024*2), 2))
+	} else {
+		return fmt.Sprintf("%.2fgb.", Round(float64(size)/(1024*3), 2))
 	}
-	return c.Status(code).JSON((HTTP{Code: code, Error: err}))
 }
 
-func TraceIsError(err error, stx *PGTx, skip ...bool) bool {
+func IsRollbackThrow(err error, stx *PGTx) bool {
 	if err != nil {
 		Error(err)
-		if len(skip) > 0 && skip[0] {
-			sentry.CaptureException(err)
-		}
+		sentry.CaptureException(err)
 		if stx != nil && !stx.Closed {
 			stx.Rollback()
 		}
 	}
 	return err != nil
+}
+
+func IsRollback(err error, stx *PGTx) bool {
+	if err != nil && stx != nil && !stx.Closed {
+		stx.Rollback()
+	}
+	return err != nil && stx != nil && !stx.Closed
 }

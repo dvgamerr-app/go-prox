@@ -91,14 +91,17 @@ func Errorf(format string, v ...interface{}) {
 }
 
 func HttpErrorf(code int, err error) *HTTP {
-	return &HTTP{Code: code, Error: err}
+	errMsg := err.Error()
+	return &HTTP{Code: code, Error: &errMsg}
 }
 func HttpErrorPrint(code int, format string, v ...interface{}) *HTTP {
-	return &HTTP{Code: code, Error: fmt.Errorf(format, v...)}
+	errMsg := fmt.Sprintf(format, v...)
+	return &HTTP{Code: code, Error: &errMsg}
 }
 
 func HttpErrorPrintf(code int, v ...interface{}) *HTTP {
-	return &HTTP{Code: code, Error: fmt.Errorf("%s", v...)}
+	errMsg := fmt.Sprintf("%s", v...)
+	return &HTTP{Code: code, Error: &errMsg}
 }
 
 func Fatal(v ...interface{}) {
