@@ -151,8 +151,8 @@ func IsRollbackThrow(err error, stx *PGTx) bool {
 }
 
 func IsRollback(err error, stx *PGTx) bool {
-	if err != nil && stx != nil && !stx.Closed {
+	if err != nil && !stx.Closed {
 		stx.Rollback()
 	}
-	return err != nil && stx != nil && !stx.Closed
+	return err != nil
 }
