@@ -1,3 +1,3 @@
-# GoAsA
+# Oprox API
 
-Library golang for Data As a Service Project
+go-oproxapi (golang proxy openapi)
