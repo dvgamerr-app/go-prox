@@ -57,7 +57,6 @@ func initLogging() error {
 	}
 
 	if !envs.IsDev || args.DaemonService {
-		log.Info().Msgf("goProx starting...")
 		var err error
 		execFilename, err := os.Executable()
 		if err != nil {
@@ -72,7 +71,8 @@ func initLogging() error {
 			log.Fatal().Err(err)
 		}
 
-		log.Output(logFile)
+		log.Logger = log.Output(logFile)
+		log.Info().Msgf("goProx starting...")
 	} else {
 		timeFormat := time.DateTime
 		if envs.IsDev {
@@ -82,7 +82,7 @@ func initLogging() error {
 		log.Info().Msgf("goProx is Development mode.")
 	}
 
-	log.Info().Msgf("OS: %s Arch: %s", runtime.GOOS, runtime.GOARCH)
+	log.Info().Msgf("os: %s arch: %s", runtime.GOOS, runtime.GOARCH)
 
 	return nil
 }
