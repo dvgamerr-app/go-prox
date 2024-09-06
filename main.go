@@ -56,7 +56,7 @@ func initLogging() error {
 		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	}
 
-	if !envs.IsDev || args.DaemonService {
+	if !envs.IsDev && args.DaemonService {
 		var err error
 		execFilename, err := os.Executable()
 		if err != nil {
@@ -87,8 +87,31 @@ func initLogging() error {
 	return nil
 }
 
+type ProxService struct{}
+
+func (p *ProxService) Init() error {
+	log.Info().Msgf("Init()")
+	return nil
+}
+
+func (p *ProxService) Tick() error {
+	log.Info().Msgf("Tick()")
+	return nil
+}
+
+func (p *ProxService) Shutdown() error {
+	log.Info().Msgf("Shutdown()")
+	return nil
+}
+
 func main() {
 	defer logFile.Close()
+
+	var prox *ProxService
+
+	if args.DaemonService {
+		RunService("GoProx", envs.IsDev, prox)
+	}
 }
 
 // func main() {
@@ -100,55 +123,4 @@ func main() {
 
 // 	log.SetOutput(f)
 // 	runService("GoProx", false)
-// }
-
-// type GoProx struct{}
-
-// func (m *GoProx) Execute(args []string, r <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
-
-// 	const cmdsAccepted = svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPauseAndContinue
-// 	tick := time.Tick(5 * time.Second)
-
-// 	status <- svc.Status{State: svc.StartPending}
-
-// 	status <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
-
-// loop:
-// 	for {
-// 		select {
-// 		case <-tick:
-// 			log.Print("Tick Handled...!")
-// 		case c := <-r:
-// 			switch c.Cmd {
-// 			case svc.Interrogate:
-// 				status <- c.CurrentStatus
-// 			case svc.Stop, svc.Shutdown:
-// 				log.Print("Shutting service...!")
-// 				break loop
-// 			case svc.Pause:
-// 				status <- svc.Status{State: svc.Paused, Accepts: cmdsAccepted}
-// 			case svc.Continue:
-// 				status <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
-// 			default:
-// 				log.Printf("Unexpected service control request #%d", c)
-// 			}
-// 		}
-// 	}
-
-// 	status <- svc.Status{State: svc.StopPending}
-// 	return false, 1
-// }
-
-// func runService(name string, isDebug bool) {
-// 	if isDebug {
-// 		err := debug.Run(name, &GoProx{})
-// 		if err != nil {
-// 			log.Fatalln("Error running service in debug mode.")
-// 		}
-// 	} else {
-// 		err := svc.Run(name, &GoProx{})
-// 		if err != nil {
-// 			log.Fatalln("Error running service in Service Control mode.")
-// 		}
-// 	}
 // }
