@@ -1,30 +1,33 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
-	"path"
-	"path/filepath"
-	"runtime"
 	"strings"
-	"time"
 
 	"prox/envs"
 
 	"github.com/alexflint/go-arg"
-	"github.com/rs/zerolog"
+	"github.com/gofiber/fiber/v2"
+	"github.com/pressly/goose/v3"
 	"github.com/rs/zerolog/log"
-	"github.com/rs/zerolog/pkgerrors"
 )
+
+type ProxService struct{}
 
 var (
 	// configExt string = "yaml"
 	logExt  string = "log"
 	logFile *os.File
+	prox    *ProxService
+	app     *fiber.App
 )
 
 var args struct {
-	DaemonService bool `arg:"--daemon,-d" default:"false"`
+	DBInit        *string  `arg:"--db"`
+	DaemonService bool     `arg:"--daemon,-d" default:"false"`
+	Version       bool     `arg:"--version,-v" default:"false"`
+	Param         []string `arg:"positional"`
 	// ListBrowser   bool   `arg:"--list,-l"`
 	// Token         string `arg:"--token" help:"set token one job"`
 	// Generate      string `arg:"--gen" help:"want value 'browser:profile'"`
@@ -32,6 +35,15 @@ var args struct {
 
 func init() {
 	arg.MustParse(&args)
+	if err := initVersion(); err != nil {
+		log.Error().Err(err)
+	}
+	if args.Version {
+		if err := printVersion(); err != nil {
+			log.Error().Err(err)
+		}
+		os.Exit(0)
+	}
 
 	if err := envs.Load(); err != nil {
 		log.Error().Err(err)
@@ -40,74 +52,72 @@ func init() {
 	if err := initLogging(); err != nil {
 		log.Error().Err(err)
 	}
+
+	goose.SetTableName("db_version")
+
 	// IsDev := os.Getenv("LOG_LEVEL") != ""
 }
 
-func initLogging() error {
-	logLevel := os.Getenv("LOG_LEVEL")
-
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
-
-	zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	if logLevel == "info" {
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	} else if logLevel == "trace" {
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
-	}
-
-	if !envs.IsDev && args.DaemonService {
-		var err error
-		execFilename, err := os.Executable()
-		if err != nil {
-			log.Fatal().Err(err)
-		}
-		baseFilename := strings.ReplaceAll(filepath.Base(execFilename), filepath.Ext(execFilename), "")
-		dirname := filepath.Dir(execFilename)
-		logPath := path.Join(dirname, fmt.Sprintf("%s.%s", baseFilename, logExt))
-
-		logFile, err = os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-		if err != nil {
-			log.Fatal().Err(err)
-		}
-
-		log.Logger = log.Output(logFile)
-		log.Info().Msgf("goProx starting...")
-	} else {
-		timeFormat := time.DateTime
-		if envs.IsDev {
-			timeFormat = time.TimeOnly
-		}
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: timeFormat})
-		log.Info().Msgf("goProx is Development mode.")
-	}
-
-	log.Info().Msgf("os: %s arch: %s", runtime.GOOS, runtime.GOARCH)
-
-	return nil
-}
-
-type ProxService struct{}
-
 func (p *ProxService) Init() error {
-	log.Info().Msgf("Init()")
+	log.Info().Msgf("Init...")
+	app = fiber.New(fiber.Config{
+		ServerHeader:          "go-prox/" + os.Getenv("VERSION"),
+		DisableStartupMessage: true,
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			log.Error().Msgf("%v", err)
+			return nil
+		},
+		DisableDefaultDate:       true,
+		DisableHeaderNormalizing: true,
+		AppName:                  "Prox",
+	})
+
+	// GET /api/register
+	app.Get("/health", func(c *fiber.Ctx) error {
+		if strings.Contains(string(c.Request().Header.ContentType()), "json") {
+			c.Response().Header.Set("Content-Type", "application/json; charset=utf-8")
+			return c.SendString(`{"ok":"☕"}`)
+		}
+		return c.SendString(`☕`)
+	})
+
+	log.Info().Msgf("Starting listen :3000")
+
+	app.Use("*", func(c *fiber.Ctx) error {
+		return c.Status(501).SendString(`🫗`)
+	})
+	go app.Listen(":3000")
+
 	return nil
 }
 
 func (p *ProxService) Tick() error {
-	log.Info().Msgf("Tick()")
 	return nil
 }
 
 func (p *ProxService) Shutdown() error {
 	log.Info().Msgf("Shutdown()")
+	if app != nil {
+		if err := app.Shutdown(); err != nil {
+			log.Error().Msgf("%v", err)
+		}
+	}
 	return nil
 }
 
 func main() {
 	defer logFile.Close()
 
-	var prox *ProxService
+	if args.DBInit != nil {
+		ctx := context.Background()
+
+		if err := goose.RunContext(ctx, *args.DBInit, nil, "./database", args.Param...); err != nil {
+			log.Error().Msgf("%v", err)
+		}
+
+		log.Debug().Msg("connection closed.")
+		os.Exit(0)
+	}
 
 	if args.DaemonService {
 		RunService("GoProx", envs.IsDev, prox)

@@ -7,6 +7,9 @@ import (
 	"github.com/joho/godotenv"
 )
 
+var Version string
+var BuildTime string
+
 var IsDev bool = false
 
 func Load() error {
