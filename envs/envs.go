@@ -7,8 +7,12 @@ import (
 	"github.com/joho/godotenv"
 )
 
-var Version string
-var BuildTime string
+var (
+	AppName   string
+	Version   string
+	BuildTime string
+	CommitID  string
+)
 
 var IsDev bool = false
 

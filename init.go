@@ -17,21 +17,24 @@ import (
 	"github.com/rs/zerolog/pkgerrors"
 )
 
+type gooseLogger struct {
+	l *zerolog.Logger
+}
+
+func (l *gooseLogger) Fatalf(format string, v ...interface{}) {
+	l.l.Fatal().Msgf(strings.ReplaceAll(format, "\n", ""), v...)
+}
+
+func (l *gooseLogger) Printf(format string, v ...interface{}) {
+	l.l.Info().Msgf(strings.ReplaceAll(format, "\n", ""), v...)
+}
+
 func printVersion() error {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return errors.New("ReadBuildInfo can't read")
 	}
-	fmt.Printf("goProx %s (commit/%s, %s, %s/%s)", os.Getenv("VERSION"), bi.Main.Version, bi.GoVersion, runtime.GOOS, runtime.GOARCH)
-	return nil
-}
-
-func initVersion() error {
-	if body, err := os.ReadFile("VERSION"); err != nil {
-		return err
-	} else {
-		os.Setenv("VERSION", strings.TrimSpace(string(body)))
-	}
+	fmt.Printf("%s %s (commit/%s, %s, %s/%s)", envs.AppName, envs.Version, envs.BuildTime, bi.GoVersion, runtime.GOOS, runtime.GOARCH)
 	return nil
 }
 
@@ -64,14 +67,14 @@ func initLogging() error {
 		}
 
 		log.Logger = log.Output(logFile)
-		log.Info().Msgf("goProx starting...")
+		log.Info().Msgf("%s starting...", envs.AppName)
 	} else {
 		timeFormat := time.DateTime
 		if envs.IsDev {
 			timeFormat = time.TimeOnly
 		}
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: timeFormat})
-		log.Info().Msgf("goProx is Development mode.")
+		log.Info().Msgf("%s is Development mode.", envs.AppName)
 	}
 
 	log.Info().Msgf("os: %s arch: %s", runtime.GOOS, runtime.GOARCH)

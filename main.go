@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 
 	"prox/envs"
+	"prox/pgsql"
 
 	"github.com/alexflint/go-arg"
 	"github.com/gofiber/fiber/v2"
@@ -35,9 +37,7 @@ var args struct {
 
 func init() {
 	arg.MustParse(&args)
-	if err := initVersion(); err != nil {
-		log.Error().Err(err)
-	}
+
 	if args.Version {
 		if err := printVersion(); err != nil {
 			log.Error().Err(err)
@@ -59,17 +59,18 @@ func init() {
 }
 
 func (p *ProxService) Init() error {
-	log.Info().Msgf("Init...")
+	log.Info().Msgf("Init Fiber...")
 	app = fiber.New(fiber.Config{
-		ServerHeader:          "go-prox/" + os.Getenv("VERSION"),
-		DisableStartupMessage: true,
+		ServerHeader:             fmt.Sprintf("%s/%s", envs.AppName, envs.Version),
+		AppName:                  envs.AppName,
+		DisableKeepalive:         true,
+		DisableStartupMessage:    true,
+		DisableDefaultDate:       true,
+		DisableHeaderNormalizing: true,
 		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
 			log.Error().Msgf("%v", err)
 			return nil
 		},
-		DisableDefaultDate:       true,
-		DisableHeaderNormalizing: true,
-		AppName:                  "Prox",
 	})
 
 	// GET /api/register
@@ -81,12 +82,11 @@ func (p *ProxService) Init() error {
 		return c.SendString(`☕`)
 	})
 
-	log.Info().Msgf("Starting listen :3000")
-
 	app.Use("*", func(c *fiber.Ctx) error {
 		return c.Status(501).SendString(`🫗`)
 	})
 	go app.Listen(":3000")
+	log.Info().Msgf("Starting listen :3000")
 
 	return nil
 }
@@ -109,13 +109,15 @@ func main() {
 	defer logFile.Close()
 
 	if args.DBInit != nil {
-		ctx := context.Background()
+		goose.SetLogger(&gooseLogger{l: &log.Logger})
 
-		if err := goose.RunContext(ctx, *args.DBInit, nil, "./database", args.Param...); err != nil {
+		ctx := context.Background()
+		pgx := pgsql.Connect(&ctx)
+		defer pgx.Close()
+
+		if err := goose.RunContext(ctx, *args.DBInit, pgx.DB, "./pgsql/goose", args.Param...); err != nil {
 			log.Error().Msgf("%v", err)
 		}
-
-		log.Debug().Msg("connection closed.")
 		os.Exit(0)
 	}
 
