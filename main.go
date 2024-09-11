@@ -10,6 +10,7 @@ import (
 	"prox/pgsql"
 
 	"github.com/alexflint/go-arg"
+	"github.com/gofiber/contrib/otelfiber"
 	"github.com/gofiber/fiber/v2"
 	"github.com/pressly/goose/v3"
 	"github.com/rs/zerolog/log"
@@ -73,6 +74,9 @@ func (p *ProxService) Init() error {
 		},
 	})
 
+	// app.Use(recover.New())
+	app.Use(otelfiber.Middleware())
+
 	// GET /api/register
 	app.Get("/health", func(c *fiber.Ctx) error {
 		if strings.Contains(string(c.Request().Header.ContentType()), "json") {
@@ -118,21 +122,9 @@ func main() {
 		if err := goose.RunContext(ctx, *args.DBInit, pgx.DB, "./pgsql/goose", args.Param...); err != nil {
 			log.Error().Msgf("%v", err)
 		}
-		os.Exit(0)
 	}
 
 	if args.DaemonService {
-		RunService("GoProx", envs.IsDev, prox)
+		RunService(envs.AppName, envs.IsDev, prox)
 	}
 }
-
-// func main() {
-// 	f, err := os.OpenFile("G:/.dvgamerr/go-prox/debug.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-// 	if err != nil {
-// 		log.Fatalln(fmt.Errorf("error opening file: %v", err))
-// 	}
-// 	defer f.Close()
-
-// 	log.SetOutput(f)
-// 	runService("GoProx", false)
-// }
