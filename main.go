@@ -54,7 +54,7 @@ func init() {
 		log.Error().Err(err)
 	}
 
-	goose.SetTableName("db_version")
+	goose.SetTableName("db_prox")
 
 	// IsDev := os.Getenv("LOG_LEVEL") != ""
 }
@@ -74,16 +74,26 @@ func (p *ProxService) Init() error {
 		},
 	})
 
-	// app.Use(recover.New())
 	app.Use(otelfiber.Middleware())
 
-	// GET /api/register
 	app.Get("/health", func(c *fiber.Ctx) error {
 		if strings.Contains(string(c.Request().Header.ContentType()), "json") {
 			c.Response().Header.Set("Content-Type", "application/json; charset=utf-8")
 			return c.SendString(`{"ok":"☕"}`)
 		}
 		return c.SendString(`☕`)
+	})
+
+	app.Use("/syscall", func(c *fiber.Ctx) error {
+		c.Response().Header.Set("Content-Type", "application/json; charset=utf-8")
+		return c.Next()
+	})
+
+	app.Get("/syscall/monitor", func(c *fiber.Ctx) error {
+		if PostMessage(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, MONITOR_OFF) {
+			return c.JSON(map[string]bool{"error": false})
+		}
+		return c.JSON(map[string]bool{"error": true})
 	})
 
 	app.Use("*", func(c *fiber.Ctx) error {
