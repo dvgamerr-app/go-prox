@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"prox/pgsql"
 
 	"github.com/alexflint/go-arg"
-	"github.com/gofiber/contrib/otelfiber"
 	"github.com/gofiber/fiber/v2"
 	"github.com/pressly/goose/v3"
 	"github.com/rs/zerolog/log"
@@ -60,48 +60,7 @@ func init() {
 }
 
 func (p *ProxService) Init() error {
-	log.Info().Msgf("Init Fiber...")
-	app = fiber.New(fiber.Config{
-		ServerHeader:             fmt.Sprintf("%s/%s", envs.AppName, envs.Version),
-		AppName:                  envs.AppName,
-		DisableKeepalive:         true,
-		DisableStartupMessage:    true,
-		DisableDefaultDate:       true,
-		DisableHeaderNormalizing: true,
-		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
-			log.Error().Msgf("%v", err)
-			return nil
-		},
-	})
-
-	app.Use(otelfiber.Middleware())
-
-	app.Get("/health", func(c *fiber.Ctx) error {
-		if strings.Contains(string(c.Request().Header.ContentType()), "json") {
-			c.Response().Header.Set("Content-Type", "application/json; charset=utf-8")
-			return c.SendString(`{"ok":"☕"}`)
-		}
-		return c.SendString(`☕`)
-	})
-
-	app.Use("/syscall", func(c *fiber.Ctx) error {
-		c.Response().Header.Set("Content-Type", "application/json; charset=utf-8")
-		return c.Next()
-	})
-
-	app.Get("/syscall/monitor", func(c *fiber.Ctx) error {
-		if PostMessage(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, MONITOR_OFF) {
-			return c.JSON(map[string]bool{"error": false})
-		}
-		return c.JSON(map[string]bool{"error": true})
-	})
-
-	app.Use("*", func(c *fiber.Ctx) error {
-		return c.Status(501).SendString(`🫗`)
-	})
-	go app.Listen(":3000")
-	log.Info().Msgf("Starting listen :3000")
-
+	log.Info().Msgf("Init...")
 	return nil
 }
 
@@ -122,17 +81,53 @@ func (p *ProxService) Shutdown() error {
 func main() {
 	defer logFile.Close()
 
+	ctx := context.Background()
+	pgx := pgsql.Connect(&ctx)
+	defer pgx.Close()
+
 	if args.DBInit != nil {
 		goose.SetLogger(&gooseLogger{l: &log.Logger})
-
-		ctx := context.Background()
-		pgx := pgsql.Connect(&ctx)
-		defer pgx.Close()
 
 		if err := goose.RunContext(ctx, *args.DBInit, pgx.DB, "./pgsql/goose", args.Param...); err != nil {
 			log.Error().Msgf("%v", err)
 		}
 	}
+
+	app = fiber.New(fiber.Config{
+		ServerHeader:             fmt.Sprintf("%s/%s", envs.AppName, envs.Version),
+		AppName:                  envs.AppName,
+		DisableKeepalive:         true,
+		DisableStartupMessage:    true,
+		DisableDefaultDate:       true,
+		DisableHeaderNormalizing: true,
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			log.Error().Msgf("%v", err)
+			return nil
+		},
+	})
+
+	app.Use("/notify", func(c *fiber.Ctx) error {
+		if c.Get("x-user-liff") == "" {
+			return fiberThrowError(c, fiber.StatusUnauthorized, errors.New("Unauthorized"))
+		}
+		return c.Next()
+	})
+
+	app.Put("/notify/:serviceName/:roomName", handlerPutNotify(ctx, pgx))
+
+	app.Get("/health", func(c *fiber.Ctx) error {
+		if strings.Contains(string(c.Request().Header.ContentType()), "json") {
+			c.Response().Header.Set("Content-Type", "application/json; charset=utf-8")
+			return c.SendString(`{"ok":"☕"}`)
+		}
+		return c.SendString(`☕`)
+	})
+
+	app.Use("*", func(c *fiber.Ctx) error {
+		return c.Status(501).JSON(map[string]bool{"ok": false})
+	})
+	go app.Listen(":11535")
+	log.Info().Msgf("Starting listen :11535")
 
 	if args.DaemonService {
 		RunService(envs.AppName, envs.IsDev, prox)
