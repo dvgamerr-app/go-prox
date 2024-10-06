@@ -16,8 +16,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type ProxService struct{}
-
 var (
 	// configExt string = "yaml"
 	logExt  string = "log"
@@ -57,25 +55,6 @@ func init() {
 	goose.SetTableName("db_prox")
 
 	// IsDev := os.Getenv("LOG_LEVEL") != ""
-}
-
-func (p *ProxService) Init() error {
-	log.Info().Msgf("Init...")
-	return nil
-}
-
-func (p *ProxService) Tick() error {
-	return nil
-}
-
-func (p *ProxService) Shutdown() error {
-	log.Info().Msgf("Shutdown()")
-	if app != nil {
-		if err := app.Shutdown(); err != nil {
-			log.Error().Msgf("%v", err)
-		}
-	}
-	return nil
 }
 
 func main() {

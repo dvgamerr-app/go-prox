@@ -1,79 +1,58 @@
 package main
 
 import (
-	"time"
-
+	probing "github.com/prometheus-community/pro-bing"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/sys/windows/svc"
-	"golang.org/x/sys/windows/svc/debug"
 )
 
-type GoProx struct {
-	handle ServiceHandled
-}
+type ProxService struct{}
 
-type ServiceHandled interface {
-	Init() error
-	Tick() error
-	Shutdown() error
-}
+var pingStats []*probing.Pinger
 
-func (m *GoProx) Execute(args []string, r <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
+func (p *ProxService) Init() error {
+	log.Info().Msgf("Init...")
+	pingStats = make([]*probing.Pinger, 1)
 
-	const cmdsAccepted = svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPauseAndContinue
-	tick := time.Tick(5 * time.Second)
-
-	status <- svc.Status{State: svc.StartPending}
-
-	status <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
-
-	if err := m.handle.Init(); err != nil {
-		log.Fatal().Msgf("Error initializing service. %v", err)
-		return true, 1
+	pinger, err := probing.NewPinger("103.206.205.129")
+	pinger.SetPrivileged(true)
+	if err != nil {
+		log.Fatal().Msgf("NewPinger::%v", err)
 	}
-loop:
-	for {
-		select {
-		case <-tick:
-			if err := m.handle.Tick(); err != nil {
-				log.Error().Msgf("%v", err)
-				return true, 1
-			}
 
-		case c := <-r:
-			switch c.Cmd {
-			case svc.Interrogate:
-				status <- c.CurrentStatus
-			case svc.Stop, svc.Shutdown:
-				if err := m.handle.Shutdown(); err != nil {
-					log.Error().Msgf("%v", err)
-					return true, 0
-				}
-				break loop
-			case svc.Pause:
-				status <- svc.Status{State: svc.Paused, Accepts: cmdsAccepted}
-			case svc.Continue:
-				status <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
-			default:
-				log.Info().Msgf("Unexpected service control request #%d", c)
-			}
+	pinger.OnRecv = func(pkt *probing.Packet) {
+		log.Debug().Msgf("%d bytes from %s: icmp_seq=%d time=%v",
+			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt)
+	}
+
+	go func() {
+		if err := pinger.Run(); err != nil {
+			log.Fatal().Msgf("Run::%v", err)
+		}
+	}()
+
+	pingStats = append(pingStats, pinger)
+	log.Info().Msgf("Inited")
+	return nil
+}
+
+func (p *ProxService) Tick() error {
+	return nil
+}
+
+func (p *ProxService) Shutdown() error {
+	log.Info().Msgf("Shutdownting...")
+	if app != nil {
+		if err := app.Shutdown(); err != nil {
+			log.Error().Msgf("%v", err)
 		}
 	}
 
-	status <- svc.Status{State: svc.StopPending}
-	return false, 1
-}
-
-func RunService(name string, isDebug bool, handle ServiceHandled) {
-	if isDebug {
-		err := debug.Run(name, &GoProx{handle: handle})
-		if err != nil {
-			log.Fatal().Msgf("Error running service in debug mode. %v", err)
-		}
-	} else {
-		err := svc.Run(name, &GoProx{handle: handle})
-		if err != nil {
-			log.Fatal().Msg("Error running service in Service Control mode.")
+	for _, pinger := range pingStats {
+		if pinger != nil {
+			pinger.Stop()
 		}
 	}
+
+	log.Info().Msgf("Shutdown")
+	return nil
 }
