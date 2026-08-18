@@ -35,7 +35,9 @@ var args struct {
 }
 
 func init() {
-	arg.MustParse(&args)
+	if !strings.HasSuffix(os.Args[0], ".test") && !strings.HasSuffix(os.Args[0], ".test.exe") {
+		arg.MustParse(&args)
+	}
 
 	if args.Version {
 		if err := printVersion(); err != nil {
